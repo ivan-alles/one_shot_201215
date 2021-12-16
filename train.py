@@ -47,21 +47,31 @@ def train(config, generator, discriminator, kp_detector, he_estimator, checkpoin
         generator_full = DataParallelWithCallback(generator_full, device_ids=device_ids)
         discriminator_full = DataParallelWithCallback(discriminator_full, device_ids=device_ids)
 
+    NO_TRAINING = True
+
+
+
     with Logger(log_dir=log_dir, visualizer_params=config['visualizer_params'], checkpoint_freq=train_params['checkpoint_freq']) as logger:
         for epoch in trange(start_epoch, train_params['num_epochs']):
             for x in dataloader:
+                if NO_TRAINING:
+                    generator_full.eval()
+                    discriminator_full.eval()
+                    torch.set_grad_enabled(False)
+
                 losses_generator, generated = generator_full(x)
 
                 loss_values = [val.mean() for val in losses_generator.values()]
                 loss = sum(loss_values)
 
-                loss.backward()
-                optimizer_generator.step()
-                optimizer_generator.zero_grad()
-                optimizer_kp_detector.step()
-                optimizer_kp_detector.zero_grad()
-                optimizer_he_estimator.step()
-                optimizer_he_estimator.zero_grad()
+                if not NO_TRAINING:
+                    loss.backward()
+                    optimizer_generator.step()
+                    optimizer_generator.zero_grad()
+                    optimizer_kp_detector.step()
+                    optimizer_kp_detector.zero_grad()
+                    optimizer_he_estimator.step()
+                    optimizer_he_estimator.zero_grad()
 
                 if train_params['loss_weights']['generator_gan'] != 0:
                     optimizer_discriminator.zero_grad()
@@ -69,9 +79,10 @@ def train(config, generator, discriminator, kp_detector, he_estimator, checkpoin
                     loss_values = [val.mean() for val in losses_discriminator.values()]
                     loss = sum(loss_values)
 
-                    loss.backward()
-                    optimizer_discriminator.step()
-                    optimizer_discriminator.zero_grad()
+                    if not NO_TRAINING:
+                        loss.backward()
+                        optimizer_discriminator.step()
+                        optimizer_discriminator.zero_grad()
                 else:
                     losses_discriminator = {}
 
