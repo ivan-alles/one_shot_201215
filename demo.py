@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import matplotlib
 matplotlib.use('Agg')
 import os, sys
@@ -190,6 +192,7 @@ def make_animation(source_image, driving_video, generator, kp_detector, he_estim
         if not cpu:
             source = source.cuda()
         driving = torch.tensor(np.array(driving_video)[np.newaxis].astype(np.float32)).permute(0, 4, 1, 2, 3)
+
         kp_canonical = kp_detector(source)
         he_source = he_estimator(source)
         he_driving_initial = he_estimator(driving[:, :, 0])
@@ -198,18 +201,28 @@ def make_animation(source_image, driving_video, generator, kp_detector, he_estim
         kp_driving_initial = keypoint_transformation(kp_canonical, he_driving_initial, estimate_jacobian)
         # kp_driving_initial = keypoint_transformation(kp_canonical, he_driving_initial, free_view=free_view, yaw=yaw, pitch=pitch, roll=roll)
 
+        pred_time = 0
+        pred_count = 0
+
         for frame_idx in tqdm(range(driving.shape[2])):
             driving_frame = driving[:, :, frame_idx]
             if not cpu:
                 driving_frame = driving_frame.cuda()
+            start_time = datetime.now()
+
             he_driving = he_estimator(driving_frame)
             kp_driving = keypoint_transformation(kp_canonical, he_driving, estimate_jacobian, free_view=free_view, yaw=yaw, pitch=pitch, roll=roll)
             kp_norm = normalize_kp(kp_source=kp_source, kp_driving=kp_driving,
                                    kp_driving_initial=kp_driving_initial, use_relative_movement=relative,
                                    use_relative_jacobian=estimate_jacobian, adapt_movement_scale=adapt_movement_scale)
             out = generator(source, kp_source=kp_source, kp_driving=kp_norm)
-
+            run_time = datetime.now() - start_time
+            pred_time += run_time.total_seconds()
+            pred_count += driving_frame.shape[0]
             predictions.append(np.transpose(out['prediction'].data.cpu().numpy(), [0, 2, 3, 1])[0])
+
+        print(f'Prediction at {pred_count / pred_time:.1f} fps')
+
     return predictions
 
 def find_best_frame(source, driving, cpu=False):
